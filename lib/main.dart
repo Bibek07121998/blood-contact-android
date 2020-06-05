@@ -1,109 +1,154 @@
-import 'package:english_words/english_words.dart' as prefix0;
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
-import 'package:english_words/english_words.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:start_app/login_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 void main() => runApp(MyApp());
 
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    // final wordPair = WordPair.random();
     return MaterialApp(
-      title: 'Startup name generator',
+      title: "Code Land",
+      debugShowCheckedModeBanner: false,
+      home: MainPage(),
       theme: ThemeData(
-        primaryColor: Colors.white,
+        accentColor: Colors.white70
       ),
-      home: RandomWords(),
     );
   }
 }
-class RandomWords extends StatefulWidget {
+
+class MainPage extends StatefulWidget {
   @override
-  _RandomWordsState createState() => _RandomWordsState();
+  _MainPageState createState() => _MainPageState();
 }
 
-class _RandomWordsState extends State<RandomWords> {
-  @override
-  void _pushSaved() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) {
-          final Iterable<ListTile> tiles = _saved.map(
-            (WordPair pair) {
-              return ListTile (
-                title: Text(
-                  pair.asPascalCase,
-                  style: _biggerFont,
-                ),
-              );
-            }
-          );
-          final List<Widget> divided = ListTile
-          .divideTiles(
-            context: context,
-            tiles: tiles,
-          )
-          .toList();
-          return Scaffold(
-            appBar: AppBar(
-              title: Text('Saved Suggestions'),
-            ),
-            body: ListView(
-              children: divided
-            ),
-          );
-        }
-      )
-    );
-  }
-  final List<WordPair> _suggestions = <WordPair>[];
-  final Set<WordPair> _saved = Set<WordPair>();
-  final _biggerFont = const TextStyle(fontSize: 18.0);
-  Widget _buildSuggestion() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16.0),
-      itemBuilder: (context, i){
-        if (i.isOdd) return Divider();
+class _MainPageState extends State<MainPage> {
 
-        final index = i ~/ 2;
-        if (index >= _suggestions.length) {
-          _suggestions.addAll(generateWordPairs().take(10));
-        }
-        return _buildRow(_suggestions[index]);
-      },
-    );
+  Future<List<BloodPost>> _getPosts() async {
+    var bloodData = await http.get('http://10.0.2.2:8000/api/requests/bloodRequests/');
+
+    var jsonData = json.decode(bloodData.body);
+
+    List<BloodPost> posts = [];
+
+    for (var b in jsonData) {
+
+      BloodPost post = BloodPost(b['pk'], b['title'], b['slug'], b['username'], b['description'], b['bloodGroup'], b['image'], b['updatedDate']);
+      posts.add(post);
+
+    }
+    print(posts.length);
+
+    return posts;
+
   }
-  Widget _buildRow(WordPair pair) {
-    final bool alreadySaved = _saved.contains(pair);
-    return ListTile(
-      title: Text(
-        pair.asPascalCase,
-        style: _biggerFont,
-      ),
-      trailing: Icon(
-        alreadySaved ? Icons.favorite : Icons.favorite_border,
-        color: alreadySaved ? Colors.red: null,
-      ),
-      onTap: () {
-        setState(() {
-          if (alreadySaved) {
-            _saved.remove(pair);
-          }
-          else {
-            _saved.add(pair);
-          }
-        });
-      },
-    );
+
+  SharedPreferences sharedPreferences;
+  String name;
+  String email;
+
+  @override
+  void initState() {
+    super.initState();
+    checkLoginStatus();
   }
+
+  checkLoginStatus() async {
+    sharedPreferences = await SharedPreferences.getInstance();
+    if(sharedPreferences.getString("token") == null) {
+      Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (BuildContext context) => LoginPage()), (Route<dynamic> route) => false);
+    }
+  }
+
+  
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Startup name generator'),
+        title: Text("Blood Posts", style: TextStyle(color: Colors.white)),
         actions: <Widget>[
-          IconButton(icon: Icon(Icons.list), onPressed: _pushSaved),
+          FlatButton(
+            onPressed: () {
+              sharedPreferences.clear();
+              sharedPreferences.commit();
+              Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (BuildContext context) => LoginPage()), (Route<dynamic> route) => false);
+            },
+            child: Text("Log Out", style: TextStyle(color: Colors.white)),
+          ),
         ],
       ),
-      body: _buildSuggestion(),
+      body: Container(
+        child: FutureBuilder(
+          future: _getPosts(),
+          builder: (BuildContext conext, AsyncSnapshot snapshot){
+            if (snapshot.data == null ){
+              return Container(
+                child: Center(
+                  child: Text("Loading....."),
+                ),
+              );
+            }else{
+              return ListView.builder(
+                itemCount: snapshot.data.length,
+                itemBuilder: (BuildContext context, int pk){
+
+                  return ListTile(
+                    leading: CircleAvatar(
+                      
+                    ),
+                    title: Text(snapshot.data[pk].slug),
+                    subtitle: Text("Author:" + ' ' + snapshot.data[pk].username + '\n' + "Updated date:" + " " + snapshot.data[pk].updatedDate
+                                  + '\n' + "Blood Group:" + ' ' + snapshot.data[pk].bloodGroup
+                    ),
+                    
+                    onTap: () {
+                      Navigator.push(context, 
+                        new MaterialPageRoute(builder: (context) => PostDetailPage(snapshot.data[pk]))
+                      );
+                    },
+                  );
+
+                },
+              );
+            }
+          },
+        ),
+      ),
+      drawer: Drawer(),
     );
   }
+}
+
+class PostDetailPage extends StatelessWidget {
+
+  final BloodPost post;
+  PostDetailPage(this.post);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(post.slug),
+      ),
+    );
+  }
+}
+
+class BloodPost {
+  final int pk;
+  final String title;
+  final String slug;
+  final String username;
+  final String description;
+  final String bloodGroup;
+  final String updatedDate;
+  final String image;
+
+  BloodPost (this.pk, this.title, this.slug, this.username, this.description, this.bloodGroup, this.image, this.updatedDate);
 }
